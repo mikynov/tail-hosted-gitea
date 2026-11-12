@@ -1,0 +1,94 @@
+name: tail-hosted-gitea
+
+
+services:
+
+  tailscale:
+    image: tailscale/tailscale:stable
+    hostname: gitea
+    restart: unless-stopped
+    # Debug: Uncomment to publish Gitea on http://localhost:${GITEA_HTTP_PORT}
+    # ports:
+    #   - "127.0.0.1:${GITEA_HTTP_PORT}:${GITEA_HTTP_PORT}"
+    environment:
+      - TS_AUTHKEY=file:///run/secrets/tailscale_authkey
+      - TS_AUTH_ONCE=true
+      # https://tailscale.com/docs/features/logging#opt-out-of-client-logging
+      - TS_NO_LOGS_NO_SUPPORT=true
+      - TS_STATE_DIR=/var/lib/tailscale
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    secrets:
+      - tailscale_authkey
+
+  gitea:
+    image: docker.gitea.com/gitea:28-rootless
+    restart: unless-stopped
+    depends_on:
+      - tailscale
+    network_mode: "service:tailscale"
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__server__ROOT_URL=${GITEA_ROOT_URL}
+      - GITEA__server__HTTP_PORT=${GITEA_HTTP_PORT}
+      - GITEA__server__SSH_PORT=${GITEA_SSH_PORT}
+      - GITEA__security__SECRET_KEY_URI=file:///run/secrets/gitea_secret_key
+      - GITEA__security__INTERNAL_TOKEN_URI=file:///run/secrets/gitea_internal_token
+      - GITEA__oauth2__JWT_SECRET_URI=file:///run/secrets/gitea_jwt_secret
+    volumes:
+      - gitea-config:/etc/gitea
+      - gitea-data:/var/lib/gitea
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    secrets:
+      - gitea_secret_key
+      - gitea_internal_token
+      - gitea_jwt_secret
+
+
+volumes:
+
+  tailscale-state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/tailscale-state
+
+  gitea-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/config
+
+  gitea-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/data
+
+
+secrets:
+
+  tailscale_authkey:
+    file: ./secrets/tailscale_authkey
+
+  gitea_secret_key:
+    file: ./secrets/secret_key
+
+  gitea_internal_token:
+    file: ./secrets/internal_token
+
+  gitea_jwt_secret:
+    file: ./secrets/jwt_secret
+
+
+networks:
+
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1360
